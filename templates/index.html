@@ -1,61 +1,76 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hexagon Tile Game</title>
+    <title>Race to the Finish</title>
     <style>
         body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
             font-family: Arial, sans-serif;
-            background-color: #f0f0f0;
         }
-        #board {
+        .board {
             display: grid;
-            grid-template-columns: repeat(10, 60px);
-            grid-template-rows: repeat(10, 52px);
-            gap: 2px;
+            grid-template-columns: repeat(6, 50px);
+            gap: 5px;
+            margin: 20px 0;
         }
-        .hex {
-            width: 60px;
-            height: 52px;
-            background-color: lightgray;
-            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-            transition: background-color 0.2s;
+        .space {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #000;
+        }
+        .bonus {
+            background-color: #a8e6cf;
+        }
+        .setback {
+            background-color: #ff8b94;
+        }
+        .player1 {
+            color: red;
+            font-weight: bold;
+        }
+        .player2 {
+            color: blue;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
-
-<div id="board">
-    <!-- Hexagonal tiles will be added here on clicks -->
-</div>
-
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script>
-    $(document).ready(function() {
-        // Create an empty board of hex tiles
-        for (let i = 0; i < 100; i++) {
-            const hexTile = $('<div class="hex"></div>');
-            hexTile.data("clicked", false);  // Track if a tile has been clicked
-            $('#board').append(hexTile);
-        }
-
-        // Add color to hex tiles on click
-        $('#board').on('click', '.hex', function() {
-            if (!$(this).data("clicked")) {  // Only allow one click per tile
-                $.getJSON('/add_tile', function(data) {
-                    $(this).css('background-color', data.color);
-                    $(this).data("clicked", true);  // Mark as clicked
-                }.bind(this));
-            }
-        });
-    });
-</script>
-
+    <h1>Race to the Finish</h1>
+    {% if game.winner %}
+        <h2>Winner: {{ game.winner }}</h2>
+    {% else %}
+        <h2>Current Turn: {{ game.current_turn }}</h2>
+        <a href="{{ url_for('roll_dice') }}">Roll Dice</a>
+    {% endif %}
+    
+    <div class="board">
+        {% for i in range(1, board_spaces + 1) %}
+            <div class="space 
+                {% if i in bonuses %}bonus{% elif i in setbacks %}setback{% endif %}">
+                {{ i }}
+                {% for player, data in game.players.items() %}
+                    {% if data.position == i %}
+                        <div class="{{ player|lower }}">{{ data.name[0] }}</div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        {% endfor %}
+    </div>
+    
+    <h3>Player Status:</h3>
+    <ul>
+        {% for player, data in game.players.items() %}
+            <li>{{ data.name }} - Position: {{ data.position }}, Score: {{ data.score }}</li>
+        {% endfor %}
+    </ul>
+    
+    <h3>Actions:</h3>
+    <a href="{{ url_for('save_game') }}">Save Game</a> | 
+    <a href="{{ url_for('load_game') }}">Load Game</a> | 
+    <a href="{{ url_for('reset_game') }}">Reset Game</a>
 </body>
 </html>
