@@ -1,76 +1,125 @@
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify
 import random
+import json
 import os
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'  # Change to a secure key
 
-# Game settings
-BOARD_SPACES = 30
-BONUSES = {5: 2, 12: 3, 20: 4}  # Bonus spaces (space: additional moves)
-SETBACKS = {8: -3, 15: -2, 25: -4}  # Setback spaces (space: move back)
+GAME_STATE_FILE = 'game_state.json'
 
-# Initial game state
-DEFAULT_STATE = {
-    'players': {
-        'Player1': {'name': 'Player 1', 'position': 1, 'score': 0},
-        'Player2': {'name': 'Player 2', 'position': 1, 'score': 0}
-    },
-    'current_turn': 'Player1',
-    'winner': None
-}
+# Initialize game state
+def initialize_game_state():
+    return {
+        "players": {
+            "Red": {"position": 1, "turns_lost": 0},
+            "Blue": {"position": 1, "turns_lost": 0}
+        },
+        "current_turn": "Red",
+        "event_log": ["Game started!"],
+        "winner": None
+    }
+
+def load_game_state():
+    if os.path.exists(GAME_STATE_FILE):
+        with open(GAME_STATE_FILE, 'r') as f:
+            state = json.load(f)
+        if 'winner' not in state:
+            state['winner'] = None
+        return state
+    return initialize_game_state()
+
+def save_game_state(state):
+    with open(GAME_STATE_FILE, 'w') as f:
+        json.dump(state, f)
 
 @app.route('/')
 def index():
-    if 'game_state' not in session:
-        session['game_state'] = DEFAULT_STATE.copy()
-    return render_template('index.html', game=session['game_state'], board_spaces=BOARD_SPACES, bonuses=BONUSES, setbacks=SETBACKS)
+    game_state = load_game_state()
+    return render_template('index.html', game_state=game_state)
 
-@app.route('/roll_dice')
+@app.route('/roll_dice', methods=['POST'])
 def roll_dice():
-    game = session['game_state']
-    current_player = game['current_turn']
-    dice_roll = random.randint(1, 6)
-    game['players'][current_player]['position'] += dice_roll
+    game_state = load_game_state()
+    if game_state["winner"]:
+        return jsonify({"message": "game_over", "winner": game_state["winner"], "event_log": game_state["event_log"]})
 
-    # Check board events
-    pos = game['players'][current_player]['position']
-    if pos in BONUSES:
-        game['players'][current_player]['position'] += BONUSES[pos]
-    elif pos in SETBACKS:
-        game['players'][current_player]['position'] += SETBACKS[pos]
+    dice_value = random.randint(1, 6)
+    current_player = game_state["current_turn"]
+    opponent = "Blue" if current_player == "Red" else "Red"
+    player_data = game_state["players"][current_player]
 
-    # Keep the position within bounds
-    game['players'][current_player]['position'] = min(max(game['players'][current_player]['position'], 1), BOARD_SPACES)
-
-    # Check for a winner
-    if game['players'][current_player]['position'] >= BOARD_SPACES:
-        game['winner'] = current_player
+    if player_data["turns_lost"] > 0:
+        player_data["turns_lost"] -= 1
+        game_state["event_log"].append(f"{current_player} loses a turn.")
     else:
-        # Switch turn
-        game['current_turn'] = 'Player2' if current_player == 'Player1' else 'Player1'
+        new_position = player_data["position"] + dice_value
 
-    session['game_state'] = game
-    return redirect(url_for('index'))
+        if new_position > 38:
+            game_state["winner"] = current_player
+            game_state["event_log"].append(f"{current_player} wins the game!")
+            save_game_state(game_state)
+            return jsonify({"message": "win", "winner": current_player, "event_log": game_state["event_log"]})
 
-@app.route('/save_game')
-def save_game():
-    game = session['game_state']
-    with open('game_save.txt', 'w') as f:
-        f.write(str(game))
-    return redirect(url_for('index'))
+        player_data["position"] = new_position
+        game_state["event_log"].append(f"{current_player} rolled {dice_value} and moved to space {new_position}.")
 
-@app.route('/load_game')
-def load_game():
-    if os.path.exists('game_save.txt'):
-        with open('game_save.txt', 'r') as f:
-            session['game_state'] = eval(f.read())
-    return redirect(url_for('index'))
+        if new_position in [7, 14, 25, 33]:
+            handle_bonus(game_state, current_player, opponent, new_position)
+        elif new_position in [9, 17, 27, 38]:
+            handle_setback(game_state, current_player, new_position)
 
-@app.route('/reset_game')
+        if game_state["players"][opponent]["position"] == new_position:
+            game_state["event_log"].append(f"Crash! Both players roll back.")
+            crash(game_state, current_player, opponent)
+
+    if "Roll again" not in game_state["event_log"][-1]:
+        game_state["current_turn"] = opponent
+
+    save_game_state(game_state)
+    return jsonify({"dice_value": dice_value, "event_log": game_state["event_log"]})
+
+@app.route('/reset_game', methods=['POST'])
 def reset_game():
-    session['game_state'] = DEFAULT_STATE.copy()
-    return redirect(url_for('index'))
+    save_game_state(initialize_game_state())
+    return jsonify({"message": "reset"})
+
+def handle_bonus(game_state, player, opponent, position):
+    bonuses = {
+        7: "Boost! Move forward 1 space.",
+        14: "Pit Maneuver! Opponent loses a turn.",
+        25: "Slipstream! Move forward 2 spaces if opponent is ahead.",
+        33: "Pit Crew Advice! Roll again."
+    }
+    game_state["event_log"].append(f"{player} landed on a bonus space: {bonuses[position]}")
+    if position == 7:
+        game_state["players"][player]["position"] += 1
+    elif position == 14:
+        game_state["players"][opponent]["turns_lost"] += 1
+    elif position == 25 and game_state["players"][player]["position"] < game_state["players"][opponent]["position"]:
+        game_state["players"][player]["position"] += 2
+    elif position == 33:
+        game_state["current_turn"] = player
+
+def handle_setback(game_state, player, position):
+    setbacks = {
+        9: "Engine Overheats! Lose a turn.",
+        17: "Oil Slick! Move back 2 spaces.",
+        27: "Tire Blowout! Lose a turn.",
+        38: "Brake Fade! Move back 1 space."
+    }
+    game_state["event_log"].append(f"{player} landed on a setback space: {setbacks[position]}")
+    if position == 9 or position == 27:
+        game_state["players"][player]["turns_lost"] += 1
+    elif position == 17:
+        game_state["players"][player]["position"] -= 2
+    elif position == 38:
+        game_state["players"][player]["position"] -= 1
+
+def crash(game_state, player1, player2):
+    p1_roll = random.randint(1, 6)
+    p2_roll = random.randint(1, 6)
+    game_state["players"][player1]["position"] -= p1_roll
+    game_state["players"][player2]["position"] -= p2_roll
 
 if __name__ == '__main__':
-    app.run(debug=True) 
+    app.run(debug=True)

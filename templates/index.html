@@ -1,76 +1,81 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Race to the Finish</title>
+    <title>Race Royale</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-        }
-        .board {
-            display: grid;
-            grid-template-columns: repeat(6, 50px);
-            gap: 5px;
-            margin: 20px 0;
-        }
-        .space {
-            width: 50px;
-            height: 50px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid #000;
-        }
-        .bonus {
-            background-color: #a8e6cf;
-        }
-        .setback {
-            background-color: #ff8b94;
-        }
-        .player1 {
-            color: red;
-            font-weight: bold;
-        }
-        .player2 {
-            color: blue;
-            font-weight: bold;
-        }
+        body { font-family: Arial, sans-serif; text-align: center; }
+        .game-board { display: grid; grid-template-columns: repeat(6, 100px); gap: 8px; margin: 20px auto; }
+        .space { width: 100px; height: 100px; border: 1px solid black; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+        .bonus { background-color: lightgreen; }
+        .setback { background-color: lightcoral; }
+        .label { font-size: 12px; position: absolute; bottom: 5px; color: black; }
+        #log { margin-top: 20px; height: 100px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; }
+        .winner { font-size: 24px; color: green; margin-top: 20px; }
+        .space div { font-size: 14px; font-weight: bold; text-align: center; }
     </style>
 </head>
 <body>
-    <h1>Race to the Finish</h1>
-    {% if game.winner %}
-        <h2>Winner: {{ game.winner }}</h2>
+    <h1>Race Royale</h1>
+
+    {% if game_state.winner %}
+    <div class="winner">Congratulations {{ game_state.winner }}! You win!</div>
+    <button id="playAgain">Play Again</button>
     {% else %}
-        <h2>Current Turn: {{ game.current_turn }}</h2>
-        <a href="{{ url_for('roll_dice') }}">Roll Dice</a>
+    <button id="rollDice">Roll Dice</button>
     {% endif %}
-    
-    <div class="board">
-        {% for i in range(1, board_spaces + 1) %}
-            <div class="space 
-                {% if i in bonuses %}bonus{% elif i in setbacks %}setback{% endif %}">
-                {{ i }}
-                {% for player, data in game.players.items() %}
-                    {% if data.position == i %}
-                        <div class="{{ player|lower }}">{{ data.name[0] }}</div>
-                    {% endif %}
-                {% endfor %}
-            </div>
+
+    <div class="game-board">
+        {% set bonuses = {7: "Boost", 14: "Pit Maneuver", 25: "Slipstream", 33: "Pit Crew Advice"} %}
+        {% set setbacks = {9: "Engine Overheats", 17: "Oil Slick", 27: "Tire Blowout", 38: "Brake Fade"} %}
+        
+        {% for i in range(1, 39) %}
+        <div class="space {% if i in bonuses %}bonus{% elif i in setbacks %}setback{% endif %}">
+            <span class="label">Space {{ i }}</span>
+            {% if i in bonuses %}
+                <div>{{ bonuses[i] }}</div>
+            {% elif i in setbacks %}
+                <div>{{ setbacks[i] }}</div>
+            {% endif %}
+            
+            {% for player, data in game_state['players'].items() %}
+                {% if data['position'] == i %}
+                <span>{{ player }}</span>
+                {% endif %}
+            {% endfor %}
+        </div>
         {% endfor %}
     </div>
+
+    <div id="log">
+        <ul>
+            {% for event in game_state['event_log'] %}
+            <li>{{ event }}</li>
+            {% endfor %}
+        </ul>
+    </div>
     
-    <h3>Player Status:</h3>
-    <ul>
-        {% for player, data in game.players.items() %}
-            <li>{{ data.name }} - Position: {{ data.position }}, Score: {{ data.score }}</li>
-        {% endfor %}
-    </ul>
-    
-    <h3>Actions:</h3>
-    <a href="{{ url_for('save_game') }}">Save Game</a> | 
-    <a href="{{ url_for('load_game') }}">Load Game</a> | 
-    <a href="{{ url_for('reset_game') }}">Reset Game</a>
+    <script>
+        document.getElementById('rollDice')?.addEventListener('click', function() {
+            fetch('/roll_dice', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.message === "win") {
+                    alert(data.winner + " wins the game!");
+                    window.location.reload();
+                } else {
+                    location.reload();
+                }
+            });
+        });
+
+        document.getElementById('playAgain')?.addEventListener('click', function() {
+            fetch('/reset_game', { method: 'POST' })
+            .then(response => response.json())
+            .then(() => {
+                location.reload();
+            });
+        });
+    </script>
 </body>
 </html>
