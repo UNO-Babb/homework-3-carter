@@ -1,13 +1,13 @@
+import csv
+import os
 from flask import Flask, render_template, request, jsonify
 import random
-import json
-import os
 
 app = Flask(__name__)
 
-GAME_STATE_FILE = 'game_state.json'
+SAVE_FILE = "game_state.csv"
 
-# Initialize game state
+# Initialize default game state
 def initialize_game_state():
     return {
         "players": {
@@ -19,27 +19,62 @@ def initialize_game_state():
         "winner": None
     }
 
-def load_game_state():
-    if os.path.exists(GAME_STATE_FILE):
-        with open(GAME_STATE_FILE, 'r') as f:
-            state = json.load(f)
-        if 'winner' not in state:
-            state['winner'] = None
-        return state
-    return initialize_game_state()
+# Save game state to a CSV file
+def save_game_state_to_csv(game_state):
+    with open(SAVE_FILE, mode="w", newline="") as file:
+        writer = csv.writer(file)
+        # Write header
+        writer.writerow(["Red Player Current Space", "Blue Player Current Space", "Next Player to Roll"])
+        # Write game data
+        writer.writerow([
+            game_state["players"]["Red"]["position"],
+            game_state["players"]["Blue"]["position"],
+            game_state["current_turn"]
+        ])
+        # Write a new header for event log
+        writer.writerow(["Event Log"])
+        # Write event log line by line
+        for event in game_state["event_log"]:
+            writer.writerow([event])
 
-def save_game_state(state):
-    with open(GAME_STATE_FILE, 'w') as f:
-        json.dump(state, f)
+# Load game state from a CSV file
+def load_game_state_from_csv():
+    if not os.path.exists(SAVE_FILE):
+        return initialize_game_state()
+
+    with open(SAVE_FILE, mode="r") as file:
+        reader = csv.reader(file)
+        rows = list(reader)
+
+        if len(rows) < 3:
+            return initialize_game_state()
+
+        # Extract main game data from the first two rows
+        red_position = int(rows[1][0])
+        blue_position = int(rows[1][1])
+        current_turn = rows[1][2]
+
+        # Extract event log from remaining rows
+        event_log = [row[0] for row in rows[3:]]
+
+        return {
+            "players": {
+                "Red": {"position": red_position, "turns_lost": 0},
+                "Blue": {"position": blue_position, "turns_lost": 0}
+            },
+            "current_turn": current_turn,
+            "event_log": event_log,
+            "winner": None
+        }
 
 @app.route('/')
 def index():
-    game_state = load_game_state()
+    game_state = load_game_state_from_csv()
     return render_template('index.html', game_state=game_state)
 
 @app.route('/roll_dice', methods=['POST'])
 def roll_dice():
-    game_state = load_game_state()
+    game_state = load_game_state_from_csv()
     if game_state["winner"]:
         return jsonify({"message": "game_over", "winner": game_state["winner"], "event_log": game_state["event_log"]})
 
@@ -57,7 +92,7 @@ def roll_dice():
         if new_position > 38:
             game_state["winner"] = current_player
             game_state["event_log"].append(f"{current_player} wins the game!")
-            save_game_state(game_state)
+            save_game_state_to_csv(game_state)
             return jsonify({"message": "win", "winner": current_player, "event_log": game_state["event_log"]})
 
         player_data["position"] = new_position
@@ -75,12 +110,13 @@ def roll_dice():
     if "Roll again" not in game_state["event_log"][-1]:
         game_state["current_turn"] = opponent
 
-    save_game_state(game_state)
+    save_game_state_to_csv(game_state)
     return jsonify({"dice_value": dice_value, "event_log": game_state["event_log"]})
 
 @app.route('/reset_game', methods=['POST'])
 def reset_game():
-    save_game_state(initialize_game_state())
+    game_state = initialize_game_state()
+    save_game_state_to_csv(game_state)
     return jsonify({"message": "reset"})
 
 def handle_bonus(game_state, player, opponent, position):

@@ -12,15 +12,13 @@
         .label { font-size: 12px; position: absolute; bottom: 5px; color: black; }
         #log { margin-top: 20px; height: 100px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; }
         .winner { font-size: 24px; color: green; margin-top: 20px; }
-        .space div { font-size: 14px; font-weight: bold; text-align: center; }
     </style>
 </head>
 <body>
     <h1>Race Royale</h1>
 
     {% if game_state.winner %}
-    <div class="winner">Congratulations {{ game_state.winner }}! You win!</div>
-    <button id="playAgain">Play Again</button>
+    <div class="winner">Congratulations {{ game_state.winner }} car is the winner!</div>
     {% else %}
     <button id="rollDice">Roll Dice</button>
     {% endif %}
@@ -61,8 +59,14 @@
             .then(response => response.json())
             .then(data => {
                 if (data.message === "win") {
-                    alert(data.winner + " wins the game!");
-                    window.location.reload();
+                    alert("Congratulations " + data.winner + " car is the winner!");
+                    if (confirm("Would you like to play again?")) {
+                        fetch('/reset_game', { method: 'POST' })
+                        .then(response => response.json())
+                        .then(() => {
+                            location.reload();
+                        });
+                    }
                 } else {
                     location.reload();
                 }
